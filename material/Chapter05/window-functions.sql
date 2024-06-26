@@ -291,6 +291,9 @@ INSERT INTO map(x, alt) VALUES
   (110, 700),
   (120, 500);
 
+SELECT m.x, m.alt, bar(m.alt,0,1000,20)
+FROM   map AS m;
+
 
 SELECT m.x, m.alt,
        CASE sign(LEAD(m.alt, 1) OVER rightwards - m.alt)
@@ -356,7 +359,29 @@ ORDER BY w.b, w.a;
 -- (we need a subquery: window functions may not be place in the WHERE clause)
 --
 -- Input table dinosaurs(species, length, height, legs)
---
+DROP TABLE IF EXISTS dinosaurs;
+CREATE TABLE dinosaurs (species text, height float, length float, legs int);
+
+INSERT INTO dinosaurs(species, height, length, legs) VALUES
+  ('Ceratosaurus',      4.0,   6.1,  2),
+  ('Deinonychus',       1.5,   2.7,  2),
+  ('Microvenator',      0.8,   1.2,  2),
+  ('Plateosaurus',      2.1,   7.9,  2),
+  ('Spinosaurus',       2.4,  12.2,  2),
+  ('Tyrannosaurus',     7.0,  15.2,  2),
+  ('Velociraptor',      0.6,   1.8,  2),
+  ('Apatosaurus',       2.2,  22.9,  4),
+  ('Brachiosaurus',     7.6,  30.5,  4),
+  ('Diplodocus',        3.6,  27.1,  4),
+  ('Supersaurus',      10.0,  30.5,  4),
+  ('Albertosaurus',     4.6,   9.1,  NULL),  -- Bi-/quadropedality is
+  ('Argentinosaurus',  10.7,  36.6,  NULL),  -- unknown for these species.
+  ('Compsognathus',     0.6,   0.9,  NULL),  --
+  ('Gallimimus',        2.4,   5.5,  NULL),  -- Try to infer pedality from
+  ('Mamenchisaurus',    5.3,  21.0,  NULL),  -- their ratio of body height
+  ('Oviraptor',         0.9,   1.5,  NULL),  -- to length.
+  ('Ultrasaurus',       8.1,  30.5,  NULL);  --
+
 SELECT tallest.legs, tallest.species, tallest.height
 FROM   (SELECT d.legs, d.species, d.height,
                RANK() OVER (PARTITION BY d.legs
@@ -365,6 +390,7 @@ FROM   (SELECT d.legs, d.species, d.height,
         WHERE  d.legs IS NOT NULL) AS tallest(legs,species,height,rank)
 WHERE  tallest.rank <= 3
 ORDER BY tallest.legs, tallest.height;
+
 
 
 -- Can simulate ranking through counting:
@@ -382,8 +408,8 @@ SELECT w."row"                          AS "current row",
        COUNT(*) OVER win - COUNT(*) OVER (win RANGE BETWEEN CURRENT ROW AND CURRENT ROW) + 1
                                         AS "like RANK",
        -- DENSE_RANK()
-       DENSE_RANK() OVER win            AS "DENSE_RANK"
-       -- COUNT(DISTINCT w.a) OVER win     AS "like DENSE_RANK"  -- DISTINCT not implemented for window functions :-/
+       DENSE_RANK() OVER win            AS "DENSE_RANK",
+       COUNT(DISTINCT w.a) OVER win     AS "like DENSE_RANK"
 FROM   W AS w
 WINDOW win AS (ORDER BY w.a)
 ORDER BY w.a;
@@ -442,20 +468,20 @@ CREATE TABLE experiment (
 );
 
 -- # of experimental measurements
-\set N 100
+CREATE OR REPLACE MACRO N() AS 100;
 -- Desired # of segments after reduction
-\set segments 5
+CREATE OR REPLACE MACRO segments() AS 5;
 
 INSERT INTO experiment(t, f)
   SELECT t, random() * 40 AS f
-  FROM   generate_series(0, :N-1) AS t;
+  FROM   range(N()) AS _(t);
 
 TABLE experiment;
 
 WITH
 -- Tag each point in the data set with its segment #
 tiles(tile, t, f) AS (
-  SELECT NTILE(:segments) OVER (ORDER BY e.t) AS tile, e.t, e.f
+  SELECT NTILE(segments()) OVER (ORDER BY e.t) AS tile, e.t, e.f
   FROM   experiment AS e
 ),
 -- In each segment, find the segment boundaries [t0,t1] and the
@@ -471,7 +497,8 @@ segments(t0, t1, f0, f1) AS (
 -- For each segment, output segment boundaries t₀, t₁, and
 -- parameters m,b of linear approximation m × t + b
 SELECT s.t0, s.t1, (s.f1 - s.f0) / (s.t1 - s.t0) AS m, s.f0 AS b
-FROM   segments AS s;
+FROM   segments AS s
+ORDER BY s.t0;
 -- TABLE tiles
 -- ORDER BY t;
 -- TABLE segments
